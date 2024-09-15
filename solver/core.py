@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 
+import multiprocessing
 import os
 import io
 import random
@@ -307,7 +308,7 @@ def get_generator(instance):
     return custom_list
 
 @calculate_time
-def run_gavrptw(pool,instance_name, unit_cost, init_cost, wait_cost, delay_cost, ind_size, pop_size, \
+def run_gavrptw(use_pool, instance_name, unit_cost, init_cost, wait_cost, delay_cost, ind_size, pop_size, \
     cx_pb, mut_pb, n_gen, export_csv=False, customize_data=False):
     '''gavrptw.core.run_gavrptw(instance_name, unit_cost, init_cost, wait_cost, delay_cost,
         ind_size, pop_size, cx_pb, mut_pb, n_gen, export_csv=False, customize_data=False)'''
@@ -329,7 +330,7 @@ def run_gavrptw(pool,instance_name, unit_cost, init_cost, wait_cost, delay_cost,
     creator.create('Individual', list, fitness=creator.FitnessMax)
     toolbox = base.Toolbox()
 
-
+    pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
 
     # Attribute generator
     # toolbox.register('indexes', random.sample, range(1, ind_size + 1), ind_size)
@@ -374,8 +375,13 @@ def run_gavrptw(pool,instance_name, unit_cost, init_cost, wait_cost, delay_cost,
                 del mutant.fitness.values
         # Evaluate the individuals with an invalid fitness
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+        fitnesses = []
+        if use_pool == True:
+            fitnesses = pool.map(toolbox.evaluate, invalid_ind)
+        else:
+            fitnesses = map(toolbox.evaluate, invalid_ind)
         # fitnesses = map(toolbox.evaluate, invalid_ind)
-        fitnesses = pool.map(toolbox.evaluate, invalid_ind)
+        # fitnesses = pool.map(toolbox.evaluate, invalid_ind)
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
         print(f'  Evaluated {len(invalid_ind)} individuals')
@@ -429,3 +435,4 @@ def run_gavrptw(pool,instance_name, unit_cost, init_cost, wait_cost, delay_cost,
                 writer.writeheader()
                 for csv_row in csv_data:
                     writer.writerow(csv_row)
+    pool.close()
