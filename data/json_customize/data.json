@@ -114,7 +114,7 @@
     "order_1_15": {
         "demand": 14,
         "ready_time": 9,
-        "due_time": 8,
+        "due_time": 44,
         "service_time": 0.7,
         "origin": "大连",
         "origin_idx": 0,
@@ -128,7 +128,7 @@
     "order_1_17": {
         "demand": 30,
         "ready_time": 9,
-        "due_time": 8,
+        "due_time": 49,
         "service_time": 1.5,
         "origin": "大连",
         "origin_idx": 0,
@@ -142,7 +142,7 @@
     "order_1_20": {
         "demand": 12,
         "ready_time": 9,
-        "due_time": 8,
+        "due_time": 56,
         "service_time": 0.6,
         "origin": "大连",
         "origin_idx": 0,
@@ -226,7 +226,7 @@
     "order_2_19": {
         "demand": 18,
         "ready_time": 12,
-        "due_time": 11,
+        "due_time": 51,
         "service_time": 0.9,
         "origin": "大连",
         "origin_idx": 0,
@@ -324,7 +324,7 @@
     "order_3_15": {
         "demand": 15,
         "ready_time": 15,
-        "due_time": 14,
+        "due_time": 51,
         "service_time": 0.75,
         "origin": "大连",
         "origin_idx": 0,
@@ -338,7 +338,7 @@
     "order_3_18": {
         "demand": 28,
         "ready_time": 15,
-        "due_time": 14,
+        "due_time": 52,
         "service_time": 1.4,
         "origin": "大连",
         "origin_idx": 0,
@@ -450,7 +450,7 @@
     "order_4_17": {
         "demand": 25,
         "ready_time": 19,
-        "due_time": 18,
+        "due_time": 58,
         "service_time": 1.25,
         "origin": "大连",
         "origin_idx": 0,
@@ -464,7 +464,7 @@
     "order_4_19": {
         "demand": 25,
         "ready_time": 19,
-        "due_time": 18,
+        "due_time": 59,
         "service_time": 1.25,
         "origin": "大连",
         "origin_idx": 0,
@@ -534,7 +534,7 @@
     "order_5_14": {
         "demand": 10,
         "ready_time": 20,
-        "due_time": 19,
+        "due_time": 57,
         "service_time": 0.5,
         "origin": "大连",
         "origin_idx": 0,
@@ -548,7 +548,7 @@
     "order_5_20": {
         "demand": 10,
         "ready_time": 20,
-        "due_time": 19,
+        "due_time": 61,
         "service_time": 0.5,
         "origin": "大连",
         "origin_idx": 0,

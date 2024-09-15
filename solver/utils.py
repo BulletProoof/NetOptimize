@@ -134,3 +134,4 @@ def text2json(customize=False):
         make_dirs_for_file(path=json_file)
         with io.open(json_file, 'wt', encoding='utf-8', newline='') as file_object:
             dump(json_data, file_object, sort_keys=True, indent=4, separators=(',', ': '))
+
