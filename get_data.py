@@ -190,13 +190,6 @@ def init_data_file_by_container():
     json_dic["avg_speed"] = avg_speed
     json_dic["train_cost"] = train_cost
     json_dic["stop_time"] = stop_time
-    json_dic["depart"] = {
-        "ready_time": 0,
-        "due_time": 10000,
-        "service_time": 0,
-        "city_code": "大连",
-        "city_code": 0,
-    }
     json_dic["ships_num"] = len(ships_matrix)
     json_dic["customers_num"] = len(customer_matrix)
     json_dic["customers"] = customers

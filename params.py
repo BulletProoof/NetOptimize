@@ -22,4 +22,4 @@ wait_cost = 1.0
 delay_cost = 1.5
 random_seed = 64
 export_csv = True
-use_pool = False
+use_pool = True
