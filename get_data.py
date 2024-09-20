@@ -161,7 +161,8 @@ def init_data_file_by_container():
                 customers.append(i * 20 + j)
                 demand = shipment_matrix[i][j]
                 ready_time = ships_matrix[i][2] + transfer_time
-                due_time = ships_matrix[i][2] + time_window_matrix[i][j]
+                # due_time = ships_matrix[i][2] + time_window_matrix[i][j]
+                due_time = time_window_matrix[i][j]
                 service_time = round(shipment_matrix[i][j] * container_unload_time, 2)
                 origin = city_codes[0]
                 destination = customer_matrix[j][1]
@@ -182,7 +183,7 @@ def init_data_file_by_container():
                     "ship_idx" : i+1,
                     "customer_idx" : j+1,
                 }
-
+    
     json_dic["distance_matrix"] = distance_matrix
     json_dic["cost_matrix"] = cost_matrix
     json_dic["income_matrix"] = income_matrix

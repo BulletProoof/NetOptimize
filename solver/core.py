@@ -22,43 +22,109 @@ class Train:
         self.remaining_demand_list = remaining_demand_list
         self.arrival_time_list = arrival_time_list
 
+
+def get_orders_statistics(orders, instance):
+    cost = 0
+    upload_cost = 0
+    unload_cost = 0
+    income = 0
+    net_income = 0
+    demand = 0
+    distance = 0
+    max_ready_time = 0
+    transport_cost = 0
+    last_station_idx = 0
+    for order in orders:
+        ship_idx = order // instance['customers_num'] + 1
+        customer_id = order % instance['customers_num'] + 1
+        demand += instance[f'order_{ship_idx}_{customer_id}']['demand']
+        destination_idx = instance[f'order_{ship_idx}_{customer_id}']['destination_idx']
+        transport_cost += instance['cost_matrix'][last_station_idx][destination_idx]
+        unload_cost += instance[f'order_{ship_idx}_{customer_id}']['unload_cost']
+        upload_cost = unload_cost
+        income += instance[f'order_{ship_idx}_{customer_id}']['income']
+        max_ready_time = max(max_ready_time, instance[f'order_{ship_idx}_{customer_id}']['ready_time'])
+    net_income = income - upload_cost - unload_cost
+    # cost, unload_cost, upload_cost,income,net_income, demand, distance, max_ready_time, transport_cost
+    return {
+        'cost': cost,
+        'unload_cost': unload_cost,
+        'upload_cost': upload_cost,
+        'income': income,
+        'net_income': net_income,
+        'demand': demand,
+        'distance': distance,
+        'max_ready_time': max_ready_time,
+        'transport_cost': transport_cost
+    }
+
+
 def val_orders(orders, instance):
     elasped_time = 0
+    total_demand = 0
+    merge_orders = []
+    temp_orders = []
+    last_station_idx = 0
     for order in orders:
         ship_idx = order // instance['customers_num'] + 1
         customer_id = order % instance['customers_num'] + 1
         ready_time = instance[f'order_{ship_idx}_{customer_id}']['ready_time']
         elasped_time = max(elasped_time, ready_time)
+        total_demand += instance[f'order_{ship_idx}_{customer_id}']['demand']
+        destination_idx = instance[f'order_{ship_idx}_{customer_id}']['destination_idx']
+        if destination_idx != last_station_idx:
+            merge_orders.append(temp_orders)
+            temp_orders = []
+        else:
+            temp_orders.append(order)
+    if len(temp_orders) > 0:
+        merge_orders.append(temp_orders)
 
     last_station_idx = 0 # 港口/场站
     updated_load = 0
     stations = ['大连']
-    for order in orders:
+    i = 0
+    for i in range(len(orders)):
+        order = orders[i]
         ship_idx = order // instance['customers_num'] + 1
         customer_id = order % instance['customers_num'] + 1
-        ready_time = instance[f'order_{ship_idx}_{customer_id}']['ready_time']
-        demand = instance[f'order_{ship_idx}_{customer_id}']['demand']
-        destination_idx = instance[f'order_{ship_idx}_{customer_id}']['destination_idx']
-        travel_time = instance['distance_matrix'][last_station_idx][destination_idx] / instance['avg_speed']
-        stop_time = instance['stop_time']
-        service_time = instance[f'order_{ship_idx}_{customer_id}']['service_time']
-        destination = instance[f'order_{ship_idx}_{customer_id}']['destination']
+        info = get_order_info(order, instance)
+        ready_time = info['ready_time']
+        demand = info['demand']
+        destination_idx = info['destination_idx']
+        destination = info['destination']
+
         if destination != stations[-1]:
             stations.append(destination)
         
-        # 如果station 在stations中出现了2次，返回false
+        # 如果station 在stations中出现了2次，返回false。避免出现折返现象
         if stations.count(destination) > 1:
             return False
         
         updated_load += demand
         if updated_load > instance['max_load']:
             return False
-        elasped_time += travel_time
-        if elasped_time > instance[f'order_{ship_idx}_{customer_id}']['due_time']: # 到达时间大于截止时间
-            return False
-        elasped_time = elasped_time + stop_time + service_time
 
-        last_station_idx = destination_idx
+    last_station_idx = 0
+    for i in range(len(merge_orders)):  
+        temp_orders = merge_orders[i]
+        if temp_orders == []:
+            elasped_time += (params.stop_time + params.container_unload_time * total_demand)
+            continue
+        is_same_station = False
+        travel_time = 0
+        for order in temp_orders:
+            info = get_order_info(order, instance)
+            destination_idx = info['destination_idx']
+            travel_time = instance['distance_matrix'][last_station_idx][destination_idx] / info['avg_speed']
+            last_station_idx = info['destination_idx']
+            elasped_time += travel_time
+            if elasped_time > info['due_time']: # 到达时间大于截止时间
+                return False
+            elasped_time += info['service_time']
+            if is_same_station == False:
+                elasped_time += info['stop_time']
+            is_same_station = True
 
     return True
 
@@ -87,7 +153,6 @@ def get_order_info(order, instance):
     res['customer_idx'] = customer_id
     return res
 
-    
 
 def ind2route(individual, instance):
     route = []
@@ -119,8 +184,11 @@ def ind2route(individual, instance):
 def print_route(route, instance ,merge=False):
     '''gavrptw.core.print_route(route, merge=False)'''
     sub_route_count = 0
-    acc_cost = 0
-    acc_income = 0
+    acc_cost = 0 # 累计成本
+    acc_income = 0 # 累计收入
+    acc_unload_cost = 0 # 累计卸货成本
+    acc_upload_cost = 0 # 累计装载成本
+    acc_train_cost = 0  # 累计班列成本
     for sub_route in route:
         sub_route_count += 1
         print(f'[班列 {sub_route_count}]:')
@@ -135,20 +203,26 @@ def print_route(route, instance ,merge=False):
         ships = [] # 记录每个站点包含哪些船舶
         sub_ships = [] #记录一个站点包含的船舶
 
-        net_income = -1 * params.train_cost
+        net_income = -1 * params.train_cost # 净收入
+        acc_train_cost += params.train_cost
 
         total_demand = 0
         last_destination = 0
         max_ready_time = 0
         unload_cost = 0
         income = 0
+
+        # 计算stations&orders列表
         for order_id in sub_route:
             info = get_order_info(order_id, instance)
-            net_income = net_income + info['income'] - info['unload_cost']
             total_demand += info['demand']
             max_ready_time = max(max_ready_time, info['ready_time'])
+
+            net_income = net_income + info['income'] - info['unload_cost']
             unload_cost += info['unload_cost']
             income += info['income']
+            acc_unload_cost += info['unload_cost'] 
+            acc_income += info['income']
             # station路径
             if info['destination'] != stations[-1]:
                 stations.append(info['destination'])
@@ -161,6 +235,11 @@ def print_route(route, instance ,merge=False):
         if sub_orders != []:
             orders.append(sub_orders)
 
+        upload_cost = total_demand * params.container_unload_cost
+        net_income -= upload_cost
+        acc_upload_cost += upload_cost
+
+        # 计算customers&ships列表
         for sub_orders in orders:
             if sub_orders == []:
                 customers.append([])
@@ -182,44 +261,65 @@ def print_route(route, instance ,merge=False):
         remain_demand = total_demand
         elasped_time = max_ready_time
         last_destination_idx = 0
-        for sub_orders in orders:
+        i = 0
+        for i in range(len(orders)):
+            sub_orders = orders[i]
             sub_total_demand = 0
             destination_idx = 0
+            if sub_orders != []:
+                order_id = sub_orders[0]
+                info = get_order_info(order_id, instance)
+                destination_idx = info['destination_idx']
+
+            # 运输时间
+            elasped_time += instance['distance_matrix'][last_destination_idx][destination_idx]/info['avg_speed']
+
+            arrival_time_list.append(round(elasped_time, 2))
+            elasped_time += params.stop_time # 停站时间
+
             for order_id in sub_orders:
                 info = get_order_info(order_id, instance)
                 sub_total_demand += info['demand']
-                elasped_time += info['service_time']
-                destination_idx = info['destination_idx']
-            elasped_time += instance['distance_matrix'][last_destination_idx][destination_idx]/info['avg_speed']
+
+            # 装货、卸货时间
+            if i == 0:
+                elasped_time += total_demand * params.container_unload_time
+            else:
+                elasped_time += sub_total_demand * params.container_unload_time
+
+            
             last_destination_idx = destination_idx
             unload_list.append(sub_total_demand)
             remain_list.append(remain_demand - sub_total_demand)
             remain_demand -= sub_total_demand
-            # arrival_time_list.append(elasped_time)
-            arrival_time_list.append(round(elasped_time, 2))
-
 
         # 计算班列运输费用
         transport_cost = 0
         for i,j in zip(station_ids[0:],station_ids[1:]):
             cost = instance['cost_matrix'][i][j]
             transport_cost += cost
+            acc_cost += cost
             net_income = net_income - cost
         acc_cost += transport_cost
         acc_cost += unload_cost
+        acc_cost += upload_cost
         acc_cost += params.train_cost
-        acc_income += income
+
+        print('分配orders:',orders, end='\n')
         print('   stations:',stations, end='\n')
         print('   station_ids:',station_ids, end='\n')
         print('   customers:',customers, end='\n')
         print('   ships:',ships, end='\n')
         print('   unload:',unload_list, end='\n')
         print('   remain:',remain_list, end='\n')
+        print('   arrival_time:',arrival_time_list, end='\n')
         print('   income:',income, end='\n')
         print('   unload_cost:',unload_cost, end='\n')
+        print('   upload_cost:',upload_cost, end='\n')
         print('   transport_cost:',transport_cost, end='\n')
+        print('   train_cost:',params.train_cost, end='\n')
         print('   net_income:',net_income, end='\n')
-        print('   arrival_time:',arrival_time_list, end='\n')
+        print('   total_demand:',total_demand, end='\n')
     print('acc_cost:',acc_cost, end='\n')
     print('acc_income:',acc_income, end='\n')
     print('total_income:',acc_income - acc_cost, end='\n')
@@ -232,20 +332,19 @@ def eval_vrptw(individual, instance, unit_cost=0.0, init_cost=0, wait_cost=0, de
     route = ind2route(individual, instance)
 
     for sub_route in route:
-        sub_route_distance = 0
+        
+        # 计算子路线订单最大到港时间
+        elapsed_time = 0
+        sub_route_statistics = get_orders_statistics(sub_route, instance)
+        elapsed_time = sub_route_statistics['max_ready_time']
+    
+        # 计算子路线容量约束、时间窗约束
         sub_route_cost = 0
         sub_route_load = 0
-
-        elapsed_time = 0
-        # 计算子路线订单最大到港时间
-        for order_id in sub_route:
-            ship_idx = order_id // instance['customers_num'] + 1
-            customer_id = order_id % instance['customers_num'] + 1
-            elapsed_time =  max(instance[f'order_{ship_idx}_{customer_id}']['ready_time'], elapsed_time)
-
-        # 计算子路线容量约束、时间窗约束
         last_station_idx = 0
-        for order_id in sub_route:
+        i = 0
+        for i in range(len(sub_route)):
+            order_id = sub_route[i]
             ship_idx = order_id // instance['customers_num'] + 1
             customer_id = order_id % instance['customers_num'] + 1
             info = get_order_info(order_id, instance) 
@@ -253,23 +352,25 @@ def eval_vrptw(individual, instance, unit_cost=0.0, init_cost=0, wait_cost=0, de
             # Calculate section distance
             distance = instance['distance_matrix'][last_station_idx][destination_idx]
             travel_time = distance / instance['avg_speed']
-            cost = instance['cost_matrix'][last_station_idx][destination_idx] + instance[f'order_{ship_idx}_{customer_id}']['unload_cost']
+            transport_cost = instance['cost_matrix'][last_station_idx][destination_idx]
+            unload_cost = instance[f'order_{ship_idx}_{customer_id}']['unload_cost']
+
             sub_route_load  = sub_route_load + info['demand']
+            sub_route_cost += transport_cost + unload_cost
 
-            # Update sub-route distance
-            sub_route_distance += distance
-            sub_route_cost += cost
-
-            arrival_time = elapsed_time + travel_time
-            elapsed_time = arrival_time + info['service_time']
+            elapsed_time += travel_time
+            if i == 0:
+                elapsed_time += sub_route_statistics['demand'] * params.container_unload_time
             
             # 多个订单若是相同站点，则只计算一次停靠时间
             if last_station_idx != destination_idx:
                 elapsed_time += info['stop_time']
 
             # 顾客时间窗约束
-            if arrival_time > info['due_time']:
+            if elapsed_time > info['due_time']:
                 return (0.0, )
+            
+            elapsed_time += info['service_time']
             
             # 最大装载量限制
             if sub_route_load > info['max_load']:
