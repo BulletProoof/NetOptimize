@@ -9,10 +9,10 @@ container_unload_time = 0.05 # 单个箱子卸载时间
 
 # GA parameters
 ind_size = 100 # 染色体长度，这里不需要改，程序自动识别
-pop_size = 500 # 群体规模
+pop_size = 400 # 群体规模
 cx_pb = 0.85 # 交叉概率
-mut_pb = 0.1 #0.02， 变异概率
-n_gen = 300 # 迭代次数
+mut_pb = 0.05 #0.02， 变异概率
+n_gen = 200 # 迭代次数
 
 # 读取数据文件 "./data/json_customize/data.json"
 instance_name = 'data'

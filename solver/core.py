@@ -12,16 +12,7 @@ from . import BASE_DIR
 from .utils import make_dirs_for_file, exist, load_instance, merge_rules
 from decorator import calculate_time
 import params
-
-class Train:
-    def __init__(self, station_list, customer_list, ship_list, unload_demand_list, remaining_demand_list, arrival_time_list):
-        self.station_list = station_list
-        self.customer_list = customer_list
-        self.ship_list = ship_list
-        self.unload_demand_list = unload_demand_list
-        self.remaining_demand_list = remaining_demand_list
-        self.arrival_time_list = arrival_time_list
-
+from concurrent.futures import ThreadPoolExecutor
 
 def get_orders_statistics(orders, instance):
     cost = 0
@@ -30,7 +21,6 @@ def get_orders_statistics(orders, instance):
     income = 0
     net_income = 0
     demand = 0
-    distance = 0
     max_ready_time = 0
     transport_cost = 0
     last_station_idx = 0
@@ -44,7 +34,9 @@ def get_orders_statistics(orders, instance):
         upload_cost = unload_cost
         income += instance[f'order_{ship_idx}_{customer_id}']['income']
         max_ready_time = max(max_ready_time, instance[f'order_{ship_idx}_{customer_id}']['ready_time'])
-    net_income = income - upload_cost - unload_cost
+        cost += unload_cost + upload_cost + transport_cost
+        last_station_idx = destination_idx
+    net_income = income - upload_cost - unload_cost - transport_cost
     # cost, unload_cost, upload_cost,income,net_income, demand, distance, max_ready_time, transport_cost
     return {
         'cost': cost,
@@ -53,16 +45,15 @@ def get_orders_statistics(orders, instance):
         'income': income,
         'net_income': net_income,
         'demand': demand,
-        'distance': distance,
         'max_ready_time': max_ready_time,
         'transport_cost': transport_cost
     }
 
 
 def val_orders(orders, instance):
-    elasped_time = 0
-    total_demand = 0
-    merge_orders = []
+    elasped_time = 0 
+    total_demand = 0 # 路径总需求
+    merge_orders = [] # 相同目的地订单合并
     temp_orders = []
     last_station_idx = 0
     for order in orders:
@@ -75,24 +66,28 @@ def val_orders(orders, instance):
         if destination_idx != last_station_idx:
             merge_orders.append(temp_orders)
             temp_orders = []
+            temp_orders.append(order)
+            last_station_idx = destination_idx
         else:
             temp_orders.append(order)
     if len(temp_orders) > 0:
         merge_orders.append(temp_orders)
 
-    last_station_idx = 0 # 港口/场站
-    updated_load = 0
+
+    # (1)载重判断
+    if total_demand > instance['max_load']:
+        return False
+    
+    
+    # print(merge_orders)
+
+    # (2)单向路径判断
     stations = ['大连']
     i = 0
-    for i in range(len(orders)):
-        order = orders[i]
+    for order in orders:
         ship_idx = order // instance['customers_num'] + 1
         customer_id = order % instance['customers_num'] + 1
-        info = get_order_info(order, instance)
-        ready_time = info['ready_time']
-        demand = info['demand']
-        destination_idx = info['destination_idx']
-        destination = info['destination']
+        destination = instance[f'order_{ship_idx}_{customer_id}']['destination']
 
         if destination != stations[-1]:
             stations.append(destination)
@@ -101,30 +96,28 @@ def val_orders(orders, instance):
         if stations.count(destination) > 1:
             return False
         
-        updated_load += demand
-        if updated_load > instance['max_load']:
-            return False
-
+    # (3)时间判断
     last_station_idx = 0
     for i in range(len(merge_orders)):  
         temp_orders = merge_orders[i]
         if temp_orders == []:
             elasped_time += (params.stop_time + params.container_unload_time * total_demand)
             continue
-        is_same_station = False
+
         travel_time = 0
+        temp_orders_service_time = 0
         for order in temp_orders:
             info = get_order_info(order, instance)
             destination_idx = info['destination_idx']
-            travel_time = instance['distance_matrix'][last_station_idx][destination_idx] / info['avg_speed']
+            distance = instance['distance_matrix'][last_station_idx][destination_idx]
+            travel_time = distance / info['avg_speed']
             last_station_idx = info['destination_idx']
             elasped_time += travel_time
             if elasped_time > info['due_time']: # 到达时间大于截止时间
                 return False
-            elasped_time += info['service_time']
-            if is_same_station == False:
-                elasped_time += info['stop_time']
-            is_same_station = True
+            temp_orders_service_time += info['service_time']
+        elasped_time += temp_orders_service_time # 站点总卸货时间
+        elasped_time += params.stop_time # 站点停靠时间
 
     return True
 
@@ -272,7 +265,9 @@ def print_route(route, instance ,merge=False):
                 destination_idx = info['destination_idx']
 
             # 运输时间
-            elasped_time += instance['distance_matrix'][last_destination_idx][destination_idx]/info['avg_speed']
+            distance = instance['distance_matrix'][last_destination_idx][destination_idx]
+            travel_time = distance/info['avg_speed']
+            elasped_time += travel_time
 
             arrival_time_list.append(round(elasped_time, 2))
             elasped_time += params.stop_time # 停站时间
@@ -287,7 +282,6 @@ def print_route(route, instance ,merge=False):
             else:
                 elasped_time += sub_total_demand * params.container_unload_time
 
-            
             last_destination_idx = destination_idx
             unload_list.append(sub_total_demand)
             remain_list.append(remain_demand - sub_total_demand)
@@ -305,7 +299,7 @@ def print_route(route, instance ,merge=False):
         acc_cost += upload_cost
         acc_cost += params.train_cost
 
-        print('分配orders:',orders, end='\n')
+        print('   merge_orders:',orders, end='\n')
         print('   stations:',stations, end='\n')
         print('   station_ids:',station_ids, end='\n')
         print('   customers:',customers, end='\n')
@@ -324,9 +318,7 @@ def print_route(route, instance ,merge=False):
     print('acc_income:',acc_income, end='\n')
     print('total_income:',acc_income - acc_cost, end='\n')
         
-def eval_vrptw(individual, instance, unit_cost=0.0, init_cost=0, wait_cost=0, delay_cost=0):
-    '''gavrptw.core.eval_vrptw(individual, instance, unit_cost=1.0, init_cost=0, wait_cost=0,
-        delay_cost=0)'''
+def eval_vrptw(individual, instance, unit_cost=0.0):
 
     total_cost = 0
     route = ind2route(individual, instance)
@@ -426,17 +418,8 @@ def get_generator(instance):
     return custom_list
 
 @calculate_time
-def run_gavrptw(use_pool, instance_name, unit_cost, init_cost, wait_cost, delay_cost, ind_size, pop_size, \
-    cx_pb, mut_pb, n_gen, export_csv=False, customize_data=False):
-    '''gavrptw.core.run_gavrptw(instance_name, unit_cost, init_cost, wait_cost, delay_cost,
-        ind_size, pop_size, cx_pb, mut_pb, n_gen, export_csv=False, customize_data=False)'''
-    # if customize_data:
-    #     json_data_dir = os.path.join(BASE_DIR, 'data', 'json_customize')
-    # else:
-    #     json_data_dir = os.path.join(BASE_DIR, 'data', 'json')
-
-    # json_data_dir = os.path.join(BASE_DIR, 'data', 'json_customize')
-    # json_file = os.path.join(json_data_dir, f'{instance_name}.json')
+def run_gavrptw(use_pool, instance_name, unit_cost, ind_size, pop_size, cx_pb, mut_pb, n_gen, export_csv=False):
+    
     json_file = "./data/json_customize/" + f'{instance_name}.json'
     instance = load_instance(json_file=json_file)
     if instance is None:
@@ -449,6 +432,7 @@ def run_gavrptw(use_pool, instance_name, unit_cost, init_cost, wait_cost, delay_
     toolbox = base.Toolbox()
 
     pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
+    executor = ThreadPoolExecutor(max_workers=16)
 
     # Attribute generator
     # toolbox.register('indexes', random.sample, range(1, ind_size + 1), ind_size)
@@ -460,8 +444,7 @@ def run_gavrptw(use_pool, instance_name, unit_cost, init_cost, wait_cost, delay_
     toolbox.register('individual', tools.initIterate, creator.Individual, toolbox.indexes)
     toolbox.register('population', tools.initRepeat, list, toolbox.individual)
     # Operator registering
-    toolbox.register('evaluate', eval_vrptw, instance=instance, unit_cost=unit_cost, \
-        init_cost=init_cost, wait_cost=wait_cost, delay_cost=delay_cost)
+    toolbox.register('evaluate', eval_vrptw, instance=instance, unit_cost=unit_cost)
     toolbox.register('select', tools.selRoulette)
     toolbox.register('mate', cx_partially_matched)
     toolbox.register('mutate', mut_inverse_indexes)
@@ -496,10 +479,9 @@ def run_gavrptw(use_pool, instance_name, unit_cost, init_cost, wait_cost, delay_
         fitnesses = []
         if use_pool == True:
             fitnesses = pool.map(toolbox.evaluate, invalid_ind)
+            # fitnesses = executor.map(toolbox.evaluate, invalid_ind)
         else:
             fitnesses = map(toolbox.evaluate, invalid_ind)
-        # fitnesses = map(toolbox.evaluate, invalid_ind)
-        # fitnesses = pool.map(toolbox.evaluate, invalid_ind)
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
         print(f'  Evaluated {len(invalid_ind)} individuals')
@@ -533,8 +515,7 @@ def run_gavrptw(use_pool, instance_name, unit_cost, init_cost, wait_cost, delay_
     print_route(ind2route(best_ind, instance),instance)
     print(f'Total cost: {1 / best_ind.fitness.values[0]}')
     if export_csv:
-        csv_file_name = f'{instance_name}_uC{unit_cost}_iC{init_cost}_wC{wait_cost}' \
-            f'_dC{delay_cost}_iS{ind_size}_pS{pop_size}_cP{cx_pb}_mP{mut_pb}_nG{n_gen}.csv'
+        csv_file_name = f'{instance_name}_uC{unit_cost}_iS{ind_size}_pS{pop_size}_cP{cx_pb}_mP{mut_pb}_nG{n_gen}.csv'
         # csv_file = os.path.join(BASE_DIR, 'results', csv_file_name)
         csv_file = "../results/" + csv_file_name
         print(f'Write to file: {csv_file}')
@@ -554,3 +535,4 @@ def run_gavrptw(use_pool, instance_name, unit_cost, init_cost, wait_cost, delay_
                 for csv_row in csv_data:
                     writer.writerow(csv_row)
     pool.close()
+    executor.shutdown()

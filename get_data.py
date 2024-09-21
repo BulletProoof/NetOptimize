@@ -3,13 +3,6 @@ import json
 import numpy as np
 from params import train_cost,container_unload_cost,max_load,avg_speed,transfer_time,stop_time,container_unload_time
 
-# train_cost = 20000
-# container_unload_cost = 50
-# max_load = 120
-# avg_speed = 80
-# transfer_time = 1
-# stop_time = 0.7
-# container_unload_time = 0.05
 
 def convert_numpy(obj):
     if isinstance(obj, np.integer):
@@ -68,7 +61,7 @@ def init_data_file_by_order():
                 customers.append(i * 20 + j)
                 demand = shipment_matrix[i][j]
                 ready_time = ships_matrix[i][2] + transfer_time
-                due_time = ships_matrix[i][2] + time_window_matrix[i][j]
+                due_time = time_window_matrix[i][j]
                 service_time = round(shipment_matrix[i][j] * container_unload_time, 2)
                 origin = city_codes[0]
                 destination = customer_matrix[j][1]
