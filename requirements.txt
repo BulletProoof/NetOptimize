@@ -2,3 +2,4 @@ deap==1.4.1
 numpy==1.26.4
 pandas
 openpyxl
+matplotlib

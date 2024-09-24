@@ -13,6 +13,7 @@ from .utils import make_dirs_for_file, exist, load_instance, merge_rules
 from decorator import calculate_time
 import params
 from concurrent.futures import ThreadPoolExecutor
+import matplotlib.pyplot as plt
 
 def get_orders_statistics(orders, instance):
     cost = 0
@@ -321,6 +322,7 @@ def print_route(route, instance ,merge=False):
 def eval_vrptw(individual, instance, unit_cost=0.0):
 
     total_cost = 0
+    total_income = 0
     route = ind2route(individual, instance)
 
     for sub_route in route:
@@ -329,9 +331,11 @@ def eval_vrptw(individual, instance, unit_cost=0.0):
         elapsed_time = 0
         sub_route_statistics = get_orders_statistics(sub_route, instance)
         elapsed_time = sub_route_statistics['max_ready_time']
+        sub_route_statistics['net_income']
     
         # 计算子路线容量约束、时间窗约束
         sub_route_cost = 0
+        sub_route_income = 0
         sub_route_load = 0
         last_station_idx = 0
         i = 0
@@ -346,9 +350,11 @@ def eval_vrptw(individual, instance, unit_cost=0.0):
             travel_time = distance / instance['avg_speed']
             transport_cost = instance['cost_matrix'][last_station_idx][destination_idx]
             unload_cost = instance[f'order_{ship_idx}_{customer_id}']['unload_cost']
+            upload_cost = unload_cost
 
+            sub_route_income += info['income']
             sub_route_load  = sub_route_load + info['demand']
-            sub_route_cost += transport_cost + unload_cost
+            sub_route_cost += transport_cost + unload_cost + upload_cost
 
             elapsed_time += travel_time
             if i == 0:
@@ -370,10 +376,12 @@ def eval_vrptw(individual, instance, unit_cost=0.0):
         
             last_station_idx = destination_idx
 
-        total_cost += sub_route_cost
+        total_income += sub_route_income
+        total_cost += sub_route_cost + params.train_cost
 
-    total_cost += len(route) * unit_cost
+    total_net_income = total_income - total_cost
     fitness = 1.0 / total_cost
+    # fitness = total_net_income
     return (fitness, )
 
 
@@ -457,6 +465,9 @@ def run_gavrptw(use_pool, instance_name, unit_cost, ind_size, pop_size, cx_pb, m
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
     print(f'  Evaluated {len(pop)} individuals')
+
+    maximum_fitness = []
+
     # Begin the evolution
     for gen in range(n_gen):
         print(f'-- Generation {gen} --')
@@ -497,6 +508,10 @@ def run_gavrptw(use_pool, instance_name, unit_cost, ind_size, pop_size, cx_pb, m
         print(f'  Max {max(fits)}')
         print(f'  Avg {mean}')
         print(f'  Std {std}')
+
+        # plot_data
+        maximum_fitness.append(max(fits))
+
         # Write data to holders for exporting results to CSV file
         if export_csv:
             csv_row = {
@@ -536,3 +551,9 @@ def run_gavrptw(use_pool, instance_name, unit_cost, ind_size, pop_size, cx_pb, m
                     writer.writerow(csv_row)
     pool.close()
     executor.shutdown()
+    plt.plot(maximum_fitness, label='Maximum Fitness')
+    plt.title('Fitness Evolution')
+    plt.xlabel('Generation')
+    plt.ylabel('Fitness')
+    if params.draw_io:
+        plt.show()
