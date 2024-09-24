@@ -23,4 +23,4 @@ delay_cost = 1.5
 random_seed = 64
 export_csv = True
 use_pool = True
-draw_io = True
+draw_io = False
